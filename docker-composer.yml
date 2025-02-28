@@ -1,0 +1,10 @@
+services:
+    mkcert:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        volumes:
+            - ../traefik/static/certs:/app/files/certs
+            - ../traefik/dynamic/tls.yaml:/app/files/traefik/tls.yaml
+            - ./files/ca:/app/files/ca
+            - /var/run/docker.sock:/var/run/docker.sock:ro
