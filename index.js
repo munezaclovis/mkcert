@@ -1,7 +1,7 @@
 import Docker from 'dockerode';
 import YAML from 'yaml';
 import { createCA, createCert } from 'mkcert';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, readdir, unlink, stat } from 'node:fs/promises';
 
 const options = {
     ca: {
@@ -21,10 +21,10 @@ let ca = {
 
 if (!ca.key || !ca.cert) {
     ca = await createCA({
-        countryCode: 'US',
+        countryCode: 'RW',
         organizationName: 'mkcert development CA',
-        locality: 'San Francisco',
-        state: 'California',
+        locality: 'Kigali',
+        state: 'Kigali',
         validity: 365,
         organization: 'mkcert development',
     });
@@ -49,6 +49,22 @@ async function generateCert(domains, ca) {
 }
 
 async function checkLabelChanges() {
+    /**
+     * @typedef {Object} TLSCertificate
+     * @property {string} certFile - Path to the certificate file.
+     * @property {string} keyFile - Path to the key file.
+     */
+
+    /**
+     * @typedef {Object} TLSConfig
+     * @property {TLSCertificate[]} certificates - List of TLS certificates.
+     */
+
+    /**
+     * @typedef {Object} TlsSchema
+     * @property {TLSConfig} tls - TLS configuration.
+     */
+
     try {
         const containers = await docker.listContainers({
             filters: {
@@ -62,22 +78,55 @@ async function checkLabelChanges() {
          */
         const certificates = new Map();
 
-        for (const container of containers) {
-            const domains = new Set(container.Labels['mkcert.domains'].split(',').map((domain) => domain.trim()));
+        const certsInFolder = await readdir(`${options.sites.certs}`);
+        /**
+         * @type Record<string, string[]>
+         */
+        const existingCerts = certsInFolder.reduce((prev, cert) => {
+            const [name] = cert.split('.');
+            const key = name.replace('-key', '');
+            if (!prev[key]) {
+                prev[key] = [];
+            }
+            prev[key].push(cert);
+            return prev;
+        }, {});
 
-            const certs = await generateCert([...domains.values()], ca);
+        const obsoleteCerts = Object.entries(existingCerts).filter(
+            ([key]) => containers.find((container) => container.Id === key) === undefined
+        );
+
+        for (const [key, certs] of obsoleteCerts) {
+            for (const cert of certs) {
+                console.log(`Removing obsolete certificate: ${key}`);
+                await unlink(`${options.sites.certs}/${cert}`);
+            }
+        }
+
+        for (const container of containers) {
+            /** @type {TlsSchema} */
+            const currentYmlContents = YAML.parse(await readFile(options.sites.tls, 'utf-8'));
+            const containerIsInYml = currentYmlContents.tls.certificates.find(
+                (x) => x.certFile === `${options.sites.certs}/${container.Id}.pem`
+            );
 
             const names = {
-                certFile: `${options.sites.certs}/${container.Names[0]}.pem`,
-                keyFile: `${options.sites.certs}/${container.Names[0]}-key.pem`,
+                certFile: `${options.sites.certs}/${container.Id}.pem`,
+                keyFile: `${options.sites.certs}/${container.Id}-key.pem`,
             };
 
-            console.log(`Creating Certificate for ${container.Names[0]}`);
-            await writeFile(names.certFile, certs.cert);
-            console.log(`Certificate: ${names.certFile}`);
+            if (containerIsInYml === undefined) {
+                const domains = new Set(container.Labels['mkcert.domains'].split(',').map((domain) => domain.trim()));
 
-            await writeFile(names.keyFile, certs.key);
-            console.log(`Private Key: ${names.keyFile}`);
+                const certs = await generateCert([...domains.values()], ca);
+
+                console.log(`Creating Certificate for ${container.Names[0]}`);
+                await writeFile(names.certFile, certs.cert);
+                console.log(`Certificate: ${names.certFile}`);
+
+                await writeFile(names.keyFile, certs.key);
+                console.log(`Private Key: ${names.keyFile}`);
+            }
 
             certificates.set(container.Id, names);
         }
@@ -96,9 +145,9 @@ async function checkLabelChanges() {
 
 // Run periodic label check every 10 seconds
 while (true) {
-    console.log('Checking for label changes...');
-    console.log('\n');
+    console.log('Checking for label changes...\n');
+
     await checkLabelChanges();
-    console.log('\n');
+
     await new Promise((resolve) => setTimeout(resolve, 10000));
 }
