@@ -44,7 +44,7 @@ jobs:
                   push: true
                   tags: |
                       ghcr.io/munezaclovis/mkcert:latest
-                      ghcr.io/munezaclovi/mkcert:${{ github.sha }}
+                      ghcr.io/munezaclovis/mkcert:${{ github.sha }}
                   cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
                   cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
 
