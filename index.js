@@ -3,6 +3,8 @@ import YAML from 'yaml';
 import { createCA, createCert } from 'mkcert';
 import { readFile, writeFile, readdir, unlink, stat } from 'node:fs/promises';
 
+if (process.env.CERT_DIR === undefined) throw new Error('CERTS environment variable is required lol');
+
 const options = {
     ca: {
         key: './files/ca/rootCA-key.pem',
@@ -74,7 +76,7 @@ async function checkLabelChanges() {
         });
 
         /**
-         * @type {Map<string, { cert: string, key: string }>}
+         * @type {Map<string, { certFile: string, keyFile: string }>}
          */
         const certificates = new Map();
 
@@ -133,7 +135,16 @@ async function checkLabelChanges() {
 
         const yamlContents = YAML.stringify({
             tls: {
-                certificates: [...certificates.values()],
+                certificates: [...certificates.values()].map((x) => {
+                    return {
+                        certFile: x.certFile
+                            .replace(`${options.sites.certs}`, process.env.CERT_DIR)
+                            .replaceAll('//', '/'),
+                        keyFile: x.keyFile
+                            .replace(`${options.sites.certs}`, process.env.CERT_DIR)
+                            .replaceAll('//', '/'),
+                    };
+                }),
             },
         });
 
