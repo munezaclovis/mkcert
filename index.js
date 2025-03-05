@@ -160,5 +160,5 @@ while (true) {
 
     await checkLabelChanges();
 
-    await new Promise((resolve) => setTimeout(resolve, 10000));
+    await new Promise((resolve) => setTimeout(resolve, process.env.CHECK_INTERVAL || 10000));
 }
