@@ -108,7 +108,7 @@ async function checkLabelChanges() {
         for (const container of containers) {
             /** @type {TlsSchema} */
             const currentYmlContents = YAML.parse(await readFile(options.sites.tls, 'utf-8'));
-            const containerIsInYml = currentYmlContents.tls.certificates.find(
+            const containerIsInYml = currentYmlContents?.tls?.certificates?.find(
                 (x) => x.certFile === `${options.sites.certs}/${container.Id}.pem`
             );
 
