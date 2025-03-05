@@ -1,4 +1,4 @@
-name: Build Docker image and publish GHCR
+name: CI/CD
 concurrency:
     cancel-in-progress: true
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -8,15 +8,39 @@ on:
         branches:
             - main
 
+env:
+    REGISTRY_IMAGE: ghcr.io/munezaclovis/mkcert
+
+permissions:
+    contents: read
+    packages: write
+
 jobs:
     build:
+        # runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
         runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            packages: write
+        # timeout-minutes: 5
+        strategy:
+            fail-fast: false
+            matrix:
+                platform: [linux/amd64, linux/arm64]
         steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+            - name: Prepare
+              run: |
+                  platform=${{ matrix.platform }}
+                  echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+            - name: Docker meta
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY_IMAGE }}
+
+            # - name: Checkout repository
+            #   uses: actions/checkout@v4
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v3
@@ -41,14 +65,72 @@ jobs:
               with:
                   context: .
                   file: Dockerfile
-                  push: true
-                  tags: |
-                      ghcr.io/munezaclovis/mkcert:latest
-                      ghcr.io/munezaclovis/mkcert:${{ github.sha }}
+                  platforms: ${{ matrix.platform }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  # push: true
+                  tags: ${{ env.REGISTRY_IMAGE }}:latest
+                  outputs: type=image,push-by-digest=true,name-canonical=true,push=true
                   cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
                   cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
+
+            - name: Export digest
+              run: |
+                  mkdir -p ${{ runner.temp }}/digests
+                  digest="${{ steps.build.outputs.digest }}"
+                  touch "${{ runner.temp }}/digests/${digest#sha256:}"
 
             - name: Move cache
               run: |
                   rm -rf ${{ runner.temp }}/.buildx-cache
                   mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
+
+            - name: Upload digest
+              uses: actions/upload-artifact@v4
+              with:
+                  name: digests-${{ env.PLATFORM_PAIR }}
+                  path: ${{ runner.temp }}/digests/*
+                  if-no-files-found: error
+                  retention-days: 1
+
+    merge:
+        runs-on: ubuntu-latest
+        needs:
+            - build
+        steps:
+            - name: Download digests
+              uses: actions/download-artifact@v4
+              with:
+                  path: ${{ runner.temp }}/digests
+                  pattern: digests-*
+                  merge-multiple: true
+
+            - name: Login to Docker Hub
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Docker meta
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY_IMAGE }}
+                  tags: |
+                      type=ref,event=branch
+                      type=ref,event=pr
+                      type=semver,pattern={{version}}
+                      type=semver,pattern={{major}}.{{minor}}
+
+            - name: Create manifest list and push
+              working-directory: ${{ runner.temp }}/digests
+              run: |
+                  docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+                    $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+
+            - name: Inspect image
+              run: |
+                  docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
