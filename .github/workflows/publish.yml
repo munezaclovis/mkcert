@@ -17,8 +17,8 @@ permissions:
 
 jobs:
     build:
-        # runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-        runs-on: ubuntu-latest
+        runs-on: ${{ startsWith(matrix.platform, 'linux/arm') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+        # runs-on: ubuntu-latest
         # timeout-minutes: 5
         strategy:
             fail-fast: false
@@ -67,7 +67,7 @@ jobs:
                   # file: Dockerfile
                   platforms: ${{ matrix.platform }}
                   labels: ${{ steps.meta.outputs.labels }}
-                  # push: true
+                  push: false
                   tags: ${{ env.REGISTRY_IMAGE }}:latest
                   outputs: type=image,push-by-digest=true,name-canonical=true,push=true
                   cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
