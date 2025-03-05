@@ -68,7 +68,7 @@ jobs:
                   platforms: ${{ matrix.platform }}
                   labels: ${{ steps.meta.outputs.labels }}
                   push: false
-                  tags: ${{ env.REGISTRY_IMAGE }}:latest
+                  tags: ${{ env.REGISTRY_IMAGE }}
                   outputs: type=image,push-by-digest=true,name-canonical=true,push=true
                   cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
                   cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
