@@ -55,6 +55,7 @@ async function checkLabelChanges() {
      * @typedef {Object} TLSCertificate
      * @property {string} certFile - Path to the certificate file.
      * @property {string} keyFile - Path to the key file.
+     * @property {string[]} stores - List of stores.
      */
 
     /**
@@ -143,6 +144,7 @@ async function checkLabelChanges() {
                         keyFile: x.keyFile
                             .replace(`${options.sites.certs}`, process.env.CERT_DIR)
                             .replaceAll('//', '/'),
+                        stores: ['default'],
                     };
                 }),
             },
