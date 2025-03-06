@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import YAML from 'yaml';
-import { createCA, createCert } from 'mkcert';
+import forge from 'node-forge';
+
 import { readFile, writeFile, readdir, unlink, stat } from 'node:fs/promises';
 
 if (process.env.CERT_DIR === undefined) throw new Error('CERTS environment variable is required lol');
@@ -22,32 +23,93 @@ let ca = {
 };
 
 if (!ca.key || !ca.cert) {
-    ca = await createCA({
-        countryCode: 'RW',
-        organizationName: 'mkcert development CA',
-        locality: 'Kigali',
-        state: 'Kigali',
-        validity: 365,
-        organization: 'mkcert development',
-    });
+    let caKeys = forge.pki.rsa.generateKeyPair(4096);
+    let caCert = forge.pki.createCertificate();
 
-    await writeFile(options.ca.key, ca.key);
-    console.log(`CA Private Key: ${options.ca.key}`);
+    caCert.publicKey = caKeys.publicKey;
+    caCert.serialNumber = '01';
+    caCert.validity.notBefore = new Date();
+    caCert.validity.notAfter = new Date();
+    caCert.validity.notAfter.setFullYear(caCert.validity.notBefore.getFullYear() + 10); // 10-year validity
 
-    await writeFile(options.ca.cert, ca.cert);
-    console.log(`CA Certificate: ${options.ca.cert}`);
+    const caAttrs = [
+        { name: 'commonName', value: 'My Root CA' },
+        { name: 'countryName', value: 'US' },
+        { name: 'organizationName', value: 'My Company' },
+        { name: 'organizationalUnitName', value: 'IT' },
+    ];
+
+    caCert.setSubject(caAttrs);
+    caCert.setIssuer(caAttrs);
+
+    // Root CA is a Certificate Authority (CA)
+    caCert.setExtensions([
+        { name: 'basicConstraints', cA: true },
+        { name: 'keyUsage', keyCertSign: true, digitalSignature: true, keyEncipherment: true },
+        { name: 'subjectKeyIdentifier', keyIdentifier: true },
+    ]);
+
+    caCert.sign(caKeys.privateKey, forge.md.sha256.create());
+
+    const caCertPem = forge.pki.certificateToPem(caCert);
+    const caKeyPem = forge.pki.privateKeyToPem(caKeys.privateKey);
+
+    // Save Root CA Certificate and Key
+    await writeFile(options.ca.cert, caCertPem);
+    await writeFile(options.ca.key, caKeyPem);
+
+    ca = {
+        key: caKeyPem,
+        cert: caCertPem,
+    };
 }
 
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 async function generateCert(domains, ca) {
-    return await createCert({
-        ca: { cert: ca.cert, key: ca.key },
-        email: 'admin@localhost',
-        organization: 'mkcert development',
-        domains: domains,
-        validity: 365,
-    });
+    const caCert = forge.pki.certificateFromPem(ca.cert);
+    const caKey = forge.pki.privateKeyFromPem(ca.key);
+
+    const domainKeys = forge.pki.rsa.generateKeyPair(2048);
+    const domainCert = forge.pki.createCertificate();
+
+    domainCert.publicKey = domainKeys.publicKey;
+    domainCert.serialNumber = '03';
+    domainCert.validity.notBefore = new Date();
+    domainCert.validity.notAfter = new Date();
+    domainCert.validity.notAfter.setFullYear(domainCert.validity.notBefore.getFullYear() + 1); // 1-year validity
+
+    // Set Subject for the domain certificate (Primary CN: one.example.com)
+    const domainAttrs = [
+        { name: 'commonName', value: domains[0] },
+        { name: 'countryName', value: 'US' },
+        { name: 'organizationName', value: 'My Company' },
+        { name: 'organizationalUnitName', value: 'Web Services' },
+    ];
+
+    domainCert.setSubject(domainAttrs);
+    domainCert.setIssuer(caCert.subject.attributes);
+
+    // Add Subject Alternative Names (SAN) for `one.example.com` and `*.example.com`
+    const altNames = domains.map((domain) => ({ type: 2, value: domain }));
+    domainCert.setExtensions([
+        { name: 'basicConstraints', cA: false },
+        { name: 'keyUsage', keyCertSign: false, digitalSignature: true, keyEncipherment: true },
+        { name: 'subjectAltName', altNames },
+    ]);
+
+    // Sign the domain certificate using the Root CA
+    domainCert.sign(caKey, forge.md.sha256.create());
+
+    // Convert to PEM format
+    const domainCertPem = forge.pki.certificateToPem(domainCert);
+    const domainKeyPem = forge.pki.privateKeyToPem(domainKeys.privateKey);
+
+    // Save Domain Certificate and Key
+    return {
+        cert: domainCertPem,
+        key: domainKeyPem,
+    };
 }
 
 async function checkLabelChanges() {
@@ -110,7 +172,7 @@ async function checkLabelChanges() {
             /** @type {TlsSchema} */
             const currentYmlContents = YAML.parse(await readFile(options.sites.tls, 'utf-8'));
             const containerIsInYml = currentYmlContents?.tls?.certificates?.find(
-                (x) => x.certFile === `${options.sites.certs}/${container.Id}.pem`
+                (x) => x.certFile === `${process.env.CERT_DIR}/${container.Id}.pem`
             );
 
             const names = {
