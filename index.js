@@ -6,6 +6,8 @@ import { readFile, writeFile, readdir, unlink, stat } from 'node:fs/promises';
 
 if (process.env.CERT_DIR === undefined) throw new Error('CERTS environment variable is required lol');
 
+const cleanPath = (str) => str.replaceAll('//', '/');
+
 const options = {
     ca: {
         key: './files/ca/rootCA-key.pem',
@@ -143,7 +145,7 @@ async function checkLabelChanges() {
          */
         const certificates = new Map();
 
-        const certsInFolder = await readdir(`${options.sites.certs}`);
+        const certsInFolder = await readdir(cleanPath(`${options.sites.certs}`));
         /**
          * @type Record<string, string[]>
          */
@@ -164,7 +166,7 @@ async function checkLabelChanges() {
         for (const [key, certs] of obsoleteCerts) {
             for (const cert of certs) {
                 console.log(`Removing obsolete certificate: ${key}`);
-                await unlink(`${options.sites.certs}/${cert}`);
+                await unlink(cleanPath(`${options.sites.certs}/${cert}`));
             }
         }
 
@@ -172,12 +174,12 @@ async function checkLabelChanges() {
             /** @type {TlsSchema} */
             const currentYmlContents = YAML.parse(await readFile(options.sites.tls, 'utf-8'));
             const containerIsInYml = currentYmlContents?.tls?.certificates?.find(
-                (x) => x.certFile === `${process.env.CERT_DIR}/${container.Id}.pem`
+                (x) => x.certFile === cleanPath(`${process.env.CERT_DIR}/${container.Id}.pem`)
             );
 
             const names = {
-                certFile: `${options.sites.certs}/${container.Id}.pem`,
-                keyFile: `${options.sites.certs}/${container.Id}-key.pem`,
+                certFile: cleanPath(`${options.sites.certs}/${container.Id}.pem`),
+                keyFile: cleanPath(`${options.sites.certs}/${container.Id}-key.pem`),
             };
 
             if (containerIsInYml === undefined) {
@@ -200,12 +202,8 @@ async function checkLabelChanges() {
             tls: {
                 certificates: [...certificates.values()].map((x) => {
                     return {
-                        certFile: x.certFile
-                            .replace(`${options.sites.certs}`, process.env.CERT_DIR)
-                            .replaceAll('//', '/'),
-                        keyFile: x.keyFile
-                            .replace(`${options.sites.certs}`, process.env.CERT_DIR)
-                            .replaceAll('//', '/'),
+                        certFile: cleanPath(x.certFile.replace(`${options.sites.certs}`, process.env.CERT_DIR)),
+                        keyFile: cleanPath(x.keyFile.replace(`${options.sites.certs}`, process.env.CERT_DIR)),
                         stores: ['default'],
                     };
                 }),
