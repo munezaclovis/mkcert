@@ -1,12 +1,12 @@
-# Traefik mkcert
+# Prvious SSL
 
 ## Overview
 
-This is a Docker image designed for development purposes. It automatically generates SSL certificates for your local projects using mkcert. This setup is optimized for use with Traefik and serves as an alternative to Let's Encrypt, which does not support local domains such as `.test`, `.local`, `.docker`, etc.
+This is a Docker image designed for development purposes. It automatically generates SSL certificates for your local projects using node-forge. This setup is optimized for use with Traefik and serves as an alternative to Let's Encrypt, which does not support local domains such as `.test`, `.local`, `.docker`, etc.
 
 ## Docker Image
 
-The image: `ghcr.io/munezaclovis/mkcert`
+The image: `ghcr.io/prvious/ssl`
 
 ### Configuration example
 
@@ -21,8 +21,8 @@ services:
         volumes:
             - './dynamic:/etc/traefik'
 
-    mkcert:
-        image: ghcr.io/munezaclovis/mkcert
+    ssl:
+        image: ghcr.io/prvious/ssl
         volumes:
             - './dynamic/certs:/app/files/certs' # Location for generated certificates
             - './dynamic/ca:/app/files/ca' # Directory for rootCA files used to sign certificates
@@ -35,11 +35,11 @@ services:
 
 ## Usage
 
-If you want to generate SSL certificates for a specific service or container, even if it resides in another folder or project, you can still use the mkcert container. Simply ensure that the appropriate directories are mounted and the `mkcert.domains` and `traefik.enable=true` label is configured correctly for the target service.
+If you want to generate SSL certificates for a specific service or container, even if it resides in another folder or project, you can still use the prvious/ssl container. Simply ensure that the appropriate directories are mounted and the `prvious.ssl.domains` and `prvious.ssl.enable=true` label is configured correctly for the target service.
 
 ```
-traefik.enable=true
-mkcert.domains=example.test,*.example.test
+prvious.ssl.enable=true
+prvious.ssl.domains=example.test,*.example.test
 ```
 
 #### Example:
@@ -52,7 +52,7 @@ myservice:
         - 'traefik.http.routers.myservice.rule=Host(`myservice.test`)'
         - 'traefik.http.routers.myservice.entrypoints=https'
         - 'traefik.http.routers.myservice.tls=true'
-        - 'mkcert.domains=myservice.test,*.myservice.test'
+        - 'prvious.ssl.domains=myservice.test,*.myservice.test'
 ```
 
 ## Mounting Files
@@ -65,7 +65,7 @@ To access the generated files, mount the `/app/files/` directory. Within this di
 
 ## Environment Variables
 
-Since the mkcert image doesn’t know where the certificates will be mounted in Traefik, you MUST provide the `CERT_DIR` variable. This variable is used to construct the full path when generating the `tls.yml` file, ensuring Traefik can locate and load the certificates.
+Since the prvious/ssl image doesn’t know where the certificates will be mounted in Traefik, you MUST provide the `CERT_DIR` variable. This variable is used to construct the full path when generating the `tls.yml` file, ensuring Traefik can locate and load the certificates.
 
 ## Auto Trust the Generated SSL Certificates
 

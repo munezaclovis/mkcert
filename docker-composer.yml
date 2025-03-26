@@ -1,5 +1,5 @@
 services:
-    mkcert:
+    ssl:
         build:
             context: .
             dockerfile: Dockerfile

@@ -1,6 +1,4 @@
-variable "IMAGE_NAME" {
-    default = "ghcr.io/munezaclovis/mkcert"
-}
+variable "IMAGE_NAME" {}
 
 variable "VERSION" {
     default = "dev"

@@ -136,7 +136,7 @@ async function checkLabelChanges() {
         const containers = await docker.listContainers({
             filters: {
                 status: ['running'],
-                label: ['traefik.enable=true', 'mkcert.domains'],
+                label: ['prvious.ssl.enable=true', 'prvious.ssl.domains'],
             },
         });
 
@@ -183,7 +183,9 @@ async function checkLabelChanges() {
             };
 
             if (containerIsInYml === undefined) {
-                const domains = new Set(container.Labels['mkcert.domains'].split(',').map((domain) => domain.trim()));
+                const domains = new Set(
+                    container.Labels['prvious.ssl.domains'].split(',').map((domain) => domain.trim())
+                );
 
                 const certs = await generateCert([...domains.values()], ca);
 
